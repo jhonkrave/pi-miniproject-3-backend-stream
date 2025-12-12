@@ -55,6 +55,12 @@ declare module 'socket.io' {
 /**
  * Initializes the Socket.io server with event handlers.
  * @param {Server} io - The Socket.io server instance.
+ * 
+ * ANALYSIS OF IMPACT:
+ * This server acts strictly as a Signaling Server (exchanging Peer IDs/ICE candidates)
+ * and potentially as a STUN/TURN coordinator.
+ * It DOES NOT process audio/video media streams directly.
+ * Media recording for transcription must be handled on the Frontend (P2P).
  */
 export const initializeSocket = (io: Server): void => {
   // Middleware for authentication
@@ -109,6 +115,9 @@ export const initializeSocket = (io: Server): void => {
         socketId: socket.id,
       });
 
+      // PeerJS compatible event
+      socket.to(roomId).emit('user-connected', socket.user?.uid || userId);
+
       // Notify the joining peer about existing peers in the room
       const room = io.sockets.adapter.rooms.get(roomId);
       if (room) {
@@ -127,6 +136,31 @@ export const initializeSocket = (io: Server): void => {
           peers: peersInRoom,
         });
       }
+    });
+
+    /**
+     * Handle 'end-meeting' event.
+     * Notifies all participants that the meeting has ended.
+     * Frontend should listen for 'meeting-ended' to stop recording and handle transcription.
+     */
+    socket.on('end-meeting', (payload: { roomId: string }) => {
+      const { roomId } = payload;
+      
+      if (!roomId) {
+        socket.emit('error', { message: 'roomId is required' });
+        return;
+      }
+
+      // Check if user is authorized to end the meeting if necessary
+      // For now, we allow any participant in the room to signal end
+      
+      console.log(`Meeting ended in room ${roomId} by user ${socket.user?.uid}`);
+      
+      // Broadcast to all users in the room, including sender
+      io.to(roomId).emit('meeting-ended', {
+        roomId,
+        endedBy: socket.user?.uid
+      });
     });
 
     /**
